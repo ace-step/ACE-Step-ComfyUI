@@ -1,0 +1,28 @@
+[project]
+name = "ACE-Step-ComfyUI"
+description = "Official ComfyUI node for ACE-Step AI music generation via ACE-Step API"
+version = "0.0.1"
+license = {file = "LICENSE"}
+dependencies = [
+    "torch",
+    "numpy",
+    "requests",
+]
+classifiers = [
+    "Operating System :: OS Independent",
+]
+
+
+[project.urls]
+Repository = "https://github.com/ace-step/ACE-Step-ComfyUI"
+#  Used by Comfy Registry https://registry.comfy.org
+Documentation = "https://github.com/ace-step/ACE-Step-ComfyUI/wiki"
+"Bug Tracker" = "https://github.com/ace-step/ACE-Step-ComfyUI/issues"
+
+[tool.comfy]
+PublisherId = "ace-step"
+DisplayName = "ACE-Step-ComfyUI"
+Icon = ""
+includes = ["__init__.py", "nodes.py", "requirements.txt", "js/"]
+# "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
+
