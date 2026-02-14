@@ -96,15 +96,9 @@ class AceStepMusicGen:
                     "default": False,
                     "tooltip": "Use LLM to enhance caption and lyrics",
                 }),
-                "batch_size": ("INT", {
-                    "default": 1,
-                    "min": 1,
-                    "max": 2,
-                    "step": 1,
-                }),
                 "seed": ("STRING", {
                     "default": "-1",
-                    "tooltip": "Random seed (-1 = random). Comma-separated for batch (e.g. '42,123')",
+                    "tooltip": "Random seed (-1 = random)",
                 }),
                 "temperature": ("FLOAT", {
                     "default": 0.85,
@@ -217,9 +211,13 @@ class AceStepMusicGen:
             },
         }
 
-        # Seed: "-1" means random, otherwise pass as-is (supports comma-separated)
-        seed_str = seed.strip()
+        # Seed: "-1" means random, otherwise validate and take the first value
+        seed_str = seed.strip().split(",")[0].strip()
         if seed_str and seed_str != "-1":
+            try:
+                int(seed_str)
+            except ValueError:
+                raise RuntimeError(f"Invalid seed value: '{seed_str}', must be an integer")
             body["seed"] = seed_str
         if bpm > 0:
             body["audio_config"]["bpm"] = bpm
