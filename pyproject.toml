@@ -1,7 +1,7 @@
 [project]
-name = "ACE-Step-ComfyUI"
-description = "Official ComfyUI node for ACE-Step AI music generation via ACE-Step API"
-version = "0.0.2"
+name = "ACE-Step-v1.5-online-free"
+description = "Official ComfyUI node for ACE-Step v1.5 AI music generation via ACEMusic API"
+version = "0.0.3"
 license = {file = "LICENSE"}
 dependencies = [
     "torch",
@@ -21,7 +21,7 @@ Documentation = "https://github.com/ace-step/ACE-Step-ComfyUI/wiki"
 
 [tool.comfy]
 PublisherId = "ace-step"
-DisplayName = "ACE-Step-ComfyUI"
+DisplayName = "ACE-Step-v1.5-online-free"
 Icon = ""
 includes = ["__init__.py", "nodes.py", "requirements.txt", "js/"]
 # "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility

@@ -65,14 +65,14 @@ class AceStepMusicGen:
                 }),
                 "duration": ("FLOAT", {
                     "default": 30.0,
-                    "min": 1.0,
-                    "max": 300.0,
+                    "min": 10.0,
+                    "max": 240.0,
                     "step": 1.0,
                     "tooltip": "Audio duration in seconds",
                 }),
                 "bpm": ("INT", {
-                    "default": 0,
-                    "min": 0,
+                    "default": 30,
+                    "min": 30,
                     "max": 300,
                     "step": 1,
                     "tooltip": "Beats per minute (0 = auto)",
@@ -81,9 +81,9 @@ class AceStepMusicGen:
                     "default": "",
                     "tooltip": "Musical key and scale (e.g. 'C major', 'A minor')",
                 }),
-                "time_signature": ("STRING", {
-                    "default": "",
-                    "tooltip": "Time signature (e.g. '4/4', '3/4', '6/8')",
+                "time_signature": (["2", "3", "4", "6"], {
+                    "default": "4",
+                    "tooltip": "Time signature",
                 }),
                 "vocal_language": (["en", "zh", "ja", "ko", "es", "fr", "de", "unknown"], {
                     "default": "en",
@@ -160,7 +160,7 @@ class AceStepMusicGen:
         duration=30.0,
         bpm=0,
         key_scale="",
-        time_signature="",
+        time_signature="4",
         vocal_language="en",
         sample_mode=False,
         use_format=False,
@@ -222,7 +222,7 @@ class AceStepMusicGen:
         if bpm > 0:
             body["audio_config"]["bpm"] = bpm
         body["audio_config"]["key_scale"] = key_scale.strip() or None
-        body["audio_config"]["time_signature"] = time_signature.strip() or None
+        body["audio_config"]["time_signature"] = time_signature
         if lyrics:
             body["lyrics"] = lyrics
 
