@@ -299,9 +299,9 @@ class AceStepText2MusicGenParams:
             },
             "optional": {
                 "sample_query": ("STRING", {
-                    "default": "",
+                    "default": "a funk rock song with groovy bass and punchy drums",
                     "multiline": True,
-                    "placeholder": "Describe the music you want (e.g. upbeat pop song about summer)",
+                    "placeholder": "Describe the music you want (e.g. a funk rock song with groovy bass)",
                     "tooltip": "Natural language description for LLM to generate caption/lyrics/metadata",
                 }),
                 "is_instrumental": ("BOOLEAN", {
