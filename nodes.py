@@ -95,28 +95,54 @@ def _encode_audio_b64(audio) -> str:
     return _tensor_to_wav_b64(waveform, audio["sample_rate"])
 
 
+def _parse_wav_bytes(audio_bytes: bytes):
+    """Parse WAV bytes manually to support PCM (fmt=1) and float32 (fmt=3)."""
+    if audio_bytes[:4] != b"RIFF" or audio_bytes[8:12] != b"WAVE":
+        raise RuntimeError("Not a valid WAV file")
+    pos = 12
+    fmt_tag = n_channels = sample_rate = sampwidth = 0
+    data_offset = data_size = 0
+    while pos < len(audio_bytes) - 8:
+        chunk_id = audio_bytes[pos:pos+4]
+        chunk_size = struct.unpack_from("<I", audio_bytes, pos+4)[0]
+        pos += 8
+        if chunk_id == b"fmt ":
+            fmt_tag = struct.unpack_from("<H", audio_bytes, pos)[0]
+            n_channels = struct.unpack_from("<H", audio_bytes, pos+2)[0]
+            sample_rate = struct.unpack_from("<I", audio_bytes, pos+4)[0]
+            sampwidth = struct.unpack_from("<H", audio_bytes, pos+14)[0] // 8
+        elif chunk_id == b"data":
+            data_offset = pos
+            data_size = chunk_size
+            break
+        pos += chunk_size
+    if data_offset == 0:
+        raise RuntimeError("WAV data chunk not found")
+    raw = audio_bytes[data_offset:data_offset + data_size]
+    n_frames = data_size // (n_channels * sampwidth)
+    if fmt_tag == 1:  # PCM int
+        if sampwidth == 2:
+            samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        elif sampwidth == 4:
+            samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+        else:
+            raise RuntimeError(f"Unsupported PCM sample width: {sampwidth}")
+    elif fmt_tag == 3:  # IEEE float32
+        samples = np.frombuffer(raw, dtype=np.float32).copy()
+    else:
+        raise RuntimeError(f"Unsupported WAV format tag: {fmt_tag}")
+    samples = samples.reshape(n_frames, n_channels).T
+    tensor = torch.from_numpy(samples).unsqueeze(0)
+    return tensor, sample_rate
+
+
 def _decode_audio_data_url(data_url: str):
     if "," in data_url:
         b64_data = data_url.split(",", 1)[1]
     else:
         b64_data = data_url
     audio_bytes = base64.b64decode(b64_data)
-    buf = io.BytesIO(audio_bytes)
-    with wave.open(buf, "rb") as wf:
-        n_channels = wf.getnchannels()
-        sampwidth = wf.getsampwidth()
-        sample_rate = wf.getframerate()
-        n_frames = wf.getnframes()
-        raw = wf.readframes(n_frames)
-    if sampwidth == 2:
-        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-    elif sampwidth == 4:
-        samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
-    else:
-        raise RuntimeError(f"Unsupported WAV sample width: {sampwidth}")
-    samples = samples.reshape(n_frames, n_channels).T
-    tensor = torch.from_numpy(samples).unsqueeze(0)
-    return tensor, sample_rate
+    return _parse_wav_bytes(audio_bytes)
 
 
 def _parse_audio_response(result: dict):
