@@ -95,28 +95,54 @@ def _encode_audio_b64(audio) -> str:
     return _tensor_to_wav_b64(waveform, audio["sample_rate"])
 
 
+def _parse_wav_bytes(audio_bytes: bytes):
+    """Parse WAV bytes manually to support PCM (fmt=1) and float32 (fmt=3)."""
+    if audio_bytes[:4] != b"RIFF" or audio_bytes[8:12] != b"WAVE":
+        raise RuntimeError("Not a valid WAV file")
+    pos = 12
+    fmt_tag = n_channels = sample_rate = sampwidth = 0
+    data_offset = data_size = 0
+    while pos < len(audio_bytes) - 8:
+        chunk_id = audio_bytes[pos:pos+4]
+        chunk_size = struct.unpack_from("<I", audio_bytes, pos+4)[0]
+        pos += 8
+        if chunk_id == b"fmt ":
+            fmt_tag = struct.unpack_from("<H", audio_bytes, pos)[0]
+            n_channels = struct.unpack_from("<H", audio_bytes, pos+2)[0]
+            sample_rate = struct.unpack_from("<I", audio_bytes, pos+4)[0]
+            sampwidth = struct.unpack_from("<H", audio_bytes, pos+14)[0] // 8
+        elif chunk_id == b"data":
+            data_offset = pos
+            data_size = chunk_size
+            break
+        pos += chunk_size
+    if data_offset == 0:
+        raise RuntimeError("WAV data chunk not found")
+    raw = audio_bytes[data_offset:data_offset + data_size]
+    n_frames = data_size // (n_channels * sampwidth)
+    if fmt_tag == 1:  # PCM int
+        if sampwidth == 2:
+            samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        elif sampwidth == 4:
+            samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+        else:
+            raise RuntimeError(f"Unsupported PCM sample width: {sampwidth}")
+    elif fmt_tag == 3:  # IEEE float32
+        samples = np.frombuffer(raw, dtype=np.float32).copy()
+    else:
+        raise RuntimeError(f"Unsupported WAV format tag: {fmt_tag}")
+    samples = samples.reshape(n_frames, n_channels).T
+    tensor = torch.from_numpy(samples).unsqueeze(0)
+    return tensor, sample_rate
+
+
 def _decode_audio_data_url(data_url: str):
     if "," in data_url:
         b64_data = data_url.split(",", 1)[1]
     else:
         b64_data = data_url
     audio_bytes = base64.b64decode(b64_data)
-    buf = io.BytesIO(audio_bytes)
-    with wave.open(buf, "rb") as wf:
-        n_channels = wf.getnchannels()
-        sampwidth = wf.getsampwidth()
-        sample_rate = wf.getframerate()
-        n_frames = wf.getnframes()
-        raw = wf.readframes(n_frames)
-    if sampwidth == 2:
-        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-    elif sampwidth == 4:
-        samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
-    else:
-        raise RuntimeError(f"Unsupported WAV sample width: {sampwidth}")
-    samples = samples.reshape(n_frames, n_channels).T
-    tensor = torch.from_numpy(samples).unsqueeze(0)
-    return tensor, sample_rate
+    return _parse_wav_bytes(audio_bytes)
 
 
 def _parse_audio_response(result: dict):
@@ -243,7 +269,7 @@ class AceStepAudioCodes:
     """Editable audio codes passthrough.
     Paste codes manually, or receive from Text2Music Server generation output."""
 
-    CATEGORY = "ACE-Step"
+    CATEGORY = "api node/audio/ACE-Step"
     FUNCTION = "process"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("audio_codes",)
@@ -281,7 +307,7 @@ class AceStepAudioCodes:
 class AceStepText2MusicGenParams:
     """Generation parameters for text2music / cover / remix / repaint."""
 
-    CATEGORY = "ACE-Step"
+    CATEGORY = "api node/audio/ACE-Step"
     FUNCTION = "build"
     RETURN_TYPES = ("ACESTEP_GEN_PARAMS",)
     RETURN_NAMES = ("gen_params",)
@@ -429,7 +455,7 @@ class AceStepText2MusicGenParams:
 class AceStepSettings:
     """Inference settings: LM + DiT parameters."""
 
-    CATEGORY = "ACE-Step"
+    CATEGORY = "api node/audio/ACE-Step"
     FUNCTION = "build"
     RETURN_TYPES = ("ACESTEP_SETTINGS",)
     RETURN_NAMES = ("settings",)
@@ -633,7 +659,7 @@ class AceStepText2MusicServer:
     Inputs: serve_config fields + gen_params + settings.
     Outputs: audio + info + audio_codes."""
 
-    CATEGORY = "ACE-Step"
+    CATEGORY = "api node/audio/ACE-Step"
     FUNCTION = "generate"
     RETURN_TYPES = ("AUDIO", "STRING", "STRING")
     RETURN_NAMES = ("audio", "info", "audio_codes")
@@ -664,47 +690,15 @@ class AceStepText2MusicServer:
         headers = _make_headers(api_key)
 
         body = _build_request_body(gen_params, settings)
-        actual_task = body.get("task_type", "text2music")
         result = _post_json(f"{base}/v1/chat/completions", body, headers)
         audio, text_content = _parse_audio_response(result)
 
-        info_parts = []
-        gp = gen_params
-        param_summary = (
-            f"task: {actual_task}\n"
-            f"caption: {gp.get('caption', '')}\n"
-            f"lyrics: {gp.get('lyrics', '')[:80]}{'...' if len(gp.get('lyrics', '')) > 80 else ''}\n"
-            f"bpm: {gp.get('bpm', 0)}  key: {gp.get('key_scale', '')}  "
-            f"duration: {gp.get('duration', -1.0)}  time_sig: {gp.get('time_signature', '')}\n"
-            f"vocal_language: {gp.get('vocal_language', '')}  "
-            f"instrumental: {gp.get('instrumental', False)}"
-        )
-        if actual_task == "cover":
-            param_summary += (
-                f"\ncover_strength: {gp.get('cover_strength', 0.0)}  "
-                f"remix_strength: {gp.get('remix_strength', 1.0)}"
-            )
-            if gp.get("audio_codes"):
-                param_summary += f"\naudio_codes: {len(gp['audio_codes'])} chars"
-        if actual_task == "repaint":
-            param_summary += (
-                f"\nrepaint_start: {gp.get('repaint_start', 0.0)}  "
-                f"repaint_end: {gp.get('repaint_end', 0.0)}"
-            )
-        info_parts.append(f"=== Gen Params ===\n{param_summary}")
-
-        if text_content:
-            info_parts.append(f"\n=== Server Response ===\n{text_content}")
         out_codes = ""
         choices = result.get("choices", [])
         if choices:
             msg = choices[0].get("message", {})
             out_codes = msg.get("audio_codes", "") or ""
-        if out_codes:
-            info_parts.append(f"\n=== Audio Codes ({len(out_codes)} chars) ===")
-        info = "\n".join(info_parts)
-
-        return (audio, info, out_codes)
+        return (audio, text_content, out_codes)
 
 
 # =============================================================================
@@ -714,7 +708,7 @@ class AceStepText2MusicServer:
 class AceStepShowText:
     """Display any STRING input as text."""
 
-    CATEGORY = "ACE-Step"
+    CATEGORY = "api node/audio/ACE-Step"
     FUNCTION = "show"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("text",)
