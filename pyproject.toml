@@ -1,7 +1,7 @@
 [project]
 name = "ACE-Step-ComfyUI"
 description = "Official ComfyUI node for ACE-Step v1.5 AI music generation via ACEMusic API"
-version = "0.0.4"
+version = "0.0.5"
 license = {file = "LICENSE"}
 dependencies = [
     "torch",
